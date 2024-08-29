@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Middleware at Spacelift</title>
+
+		<!-- bootstrap -->
+		<link rel="stylesheet" href="ext/boostrap-5.3.3-dist/bootstrap.min.css">
+
+
+		<link rel="stylesheet" href="dist/reset.css">
+		<link rel="stylesheet" href="dist/reveal.css">
+		<link rel="stylesheet" href="dist/theme/white.css">
+
+		<!-- Theme used for syntax highlighted code -->
+		<link rel="stylesheet" href="plugin/highlight/monokai.css">
+
+		<style>
+			.reveal section img {
+				background-color:white;
+				border:0;
+				box-shadow: 0 0 0 0;
+			}
+
+			.reveal section {
+				background-color:white;
+				border:0;
+				box-shadow: 0 0 0 0;
+			}
+
+
+			.reveal h4 {
+				text-transform: none;
+			}
+
+			.reveal h3 {
+				text-transform: none;
+			}
+
+			.reveal h2 {
+				text-transform: none;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section>
+
+					<h3>Middleware at Spacelift</h3>
+
+					<!-- img width="60%" src="img/opentofu_and_navercloud.png" / -->
+
+					<p><small>Wojciech Barczynski | VPE | Spacelift</small></p>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### Middleware
+
+Provides common services and capabilitie.
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### Middleware
+
+<img width="80%" src="img/middleware.svg" />
+					</script>
+				</section>
+
+				<section>
+<h3>Middleware in Golang</h3>
+
+<pre style="width: 100%;"><code class="language-golang">func exampleMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Print("Middleware before")
+		next.ServeHTTP(w, r)
+		log.Print("Middleware after")
+	})
+}
+
+func main() {
+	hello := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, "Hello World!")
+	})
+	err := http.ListenAndServe(":8080", exampleMiddleware(hello))
+	log.Fatal(err)
+}
+</code></pre>
+
+<p><small>Example 1</small></p>
+				</section>
+
+				<section>
+<h3>Middleware in Golang</h3>
+
+<pre style="width: 100%;"><code class="language-golang">func main() {
+	r := chi.NewRouter()
+
+	// our middleware
+	r.Use(middleware.Logger)
+
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("welcome"))
+	})
+	http.ListenAndServe(":3000", r)
+}
+</code></pre>
+
+<p><small>Example 2 / <a href="https://github.com/go-chi/chi">chi docs</a></small></p>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### A missing piece
+
+How to pass:
+
+- Request-scoped values
+- Cancellation signals
+- Deadlines
+- ... and more
+
+<p><small><a href="https://go.dev/blog/context">go.dev/blog/context</a></small></p>
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### Context
+
+<pre style="width: 100%;"><code class="language-golang">type Context interface {
+    // Done returns a channel that is closed when this Context is canceled
+    // or times out.
+    Done() <-chan struct{}
+
+    // Err indicates why this context was canceled, after the Done channel
+    // is closed.
+    Err() error
+
+    // Deadline returns the time when this Context will be canceled, if any.
+    Deadline() (deadline time.Time, ok bool)
+
+    // Value returns the value associated with key or nil if none.
+    Value(key interface{}) interface{}
+}
+</code></pre>
+						</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### Context
+
+<pre style="width: 100%;"><code class="language-golang">
+ctx = context.WithValue(ctx, "myKey", "myValue")
+
+ctx.Value("myKey")
+</code></pre>
+						</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### Context
+
+<img width="60%" src="img/context_hierachy.svg" />
+
+						</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### Context
+
+- [spcontext](https://github.com/spacelift-io/spcontext) is a heart of our middleware
+
+					</script>
+				</section>
+
+
+				<section data-markdown>
+					<script type="text/template">
+### github.com/spacelift-io/spcontext
+
+- fields
+- tracing and span management
+- logging (bugsnag handler)
+- small utilities
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### github.com/spacelift-io/spcontext
+
+Step 1 - create:
+<pre style="width: 100%;"><code class="language-golang">
+ctx := spcontext.New(log.NewJSONLogger(os.Stdout), DatadogTracer)
+</pre>
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### github.com/spacelift-io/spcontext
+
+Step 2 - preparation:
+<pre style="width: 100%;"><code class="language-golang">
+r.Use(wrap(spcontext.ContextInjector(ctx)))
+</code></pre>
+
+<p><small><a href="https://github.com/spacelift-io/spcontext/blob/main/middleware.go#L14">spcontext.ContextInjector</a></small></p>
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### github.com/spacelift-io/spcontext
+
+Step 3 - how to use it
+<pre style="width: 100%;"><code class="language-golang">r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		ctx := spcontext.FromStdContext(r.Context())
+}
+</code></pre>
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### github.com/spacelift-io/spcontext
+
+Step 3 - tracing <3
+<pre style="width: 100%;"><code class="language-golang">ctx, span := ctx.StartSpan(
+			spcontext.WithOperation("middleware.account"),
+			spcontext.WithResource(subdomain),
+			spcontext.WithTags("myapp.account.subdomain", subdomain),
+
+			defer func() { span.Close(err) }()
+</code></pre>
+
+<p><small><a href="https://github.com/spacelift-io/spcontext/blob/main/tracing/datadog/datadog.go">spcontext.StartSpan</a></small></p>
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+### github.com/spacelift-io/spcontext
+
+Step 3 - pushing along the middleware chain
+<pre style="width: 100%;"><code class="language-golang">func exampleMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		next(w, r.WithContext(ctx))
+
+	})
+}</code></pre>
+
+<!-- p><small><a href="https://github.com/spacelift-io/spcontext/blob/main/tracing/datadog/datadog.go">spcontext.StartSpan</a></small></p -->
+					</script>
+				</section>
+
+				<!-- section data-markdown>
+					<script type="text/template">
+					### Middleware at Spacelift
+
+					1. <code>spcontext</code>
+					2. Bugsnag z dowolnego miejsca,
+					  tracing, bez problemów
+					  zawsze hook
+					  z kontekstem
+
+					3. Konceptcja contextu
+
+					4. Czym jest context w Golangu i po co go się używa.
+
+					5. logi wiedza wszyscy
+					   ale tracy, not really
+
+					6. bug, tutaj fajne rozwiazanie, nie boli to.
+
+					7. Closures
+					</script>
+				</section -->
+
+				<section data-markdown>
+					<script type="text/template">
+### Summary
+
+- Give <a href="https://github.com/spacelift-io/spcontext/tree/main">spcontext</a> a shot. 
+- You might find the code patterns useful for your project.
+
+<p><small>ps. We are hiring – <a href="https://spacelift.io/careers">spacelift.io/careers</a></small></p>
+					</script>
+				</section>
+
+				<section><h3>Questions?</h3></section>
+			</div>
+		</div>
+
+		<script src="dist/reveal.js"></script>
+		<script src="plugin/notes/notes.js"></script>
+		<script src="plugin/markdown/markdown.js"></script>
+		<script src="plugin/highlight/highlight.js"></script>
+		<script>
+			// More info about initialization & config:
+			// - https://revealjs.com/initialization/
+			// - https://revealjs.com/config/
+			Reveal.initialize({
+				hash: true,
+
+				// Learn about plugins: https://revealjs.com/plugins/
+				plugins: [ RevealMarkdown, RevealHighlight, RevealNotes ]
+			});
+		</script>
+	</body>
+</html>
